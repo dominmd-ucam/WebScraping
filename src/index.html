@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="es" class="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Web Scraping Tool</title>
+  <link href="./output.css" rel="stylesheet">
+  <!-- Incluir el archivo de Tailwind CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+  <!-- Incluir estilos personalizados -->
+  <link href="./styles.css" rel="stylesheet">
+  <!-- Incluir Font Awesome para iconos -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="bg-gray-100 p-8 transition-colors duration-300">
+
+  <div class="max-w-xl mx-auto bg-white p-6 rounded shadow-md container fade-in relative">
+    <!-- Botón de modo oscuro -->
+    <button id="darkModeToggle" class="absolute top-4 right-4 p-2 rounded-full bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 transition-colors duration-300">
+      <i class="fas fa-moon text-gray-700 dark:hidden"></i>
+      <i class="fas fa-sun text-yellow-300 hidden dark:block"></i>
+    </button>
+    
+    <h1 class="text-2xl font-bold mb-4 text-center">Web para hacer Scraping</h1>
+
+    <!-- Formulario -->
+    <form id="scrapingForm" class="space-y-4">
+      <!-- URL -->
+      <div>
+        <label for="url" class="block text-sm font-medium text-gray-700 dark:text-gray-300">URL:</label>
+        <input type="text" id="url" name="url" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-800 dark:text-white dark:border-gray-600">
+      </div>
+
+      <!-- XPath -->
+      <div>
+        <label for="xpath" class="block text-sm font-medium text-gray-700 dark:text-gray-300">XPath:</label>
+        <input type="text" id="xpath" name="xpath" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-800 dark:text-white dark:border-gray-600">
+      </div>
+
+      <!-- Botón de Scraping -->
+      <div class="text-center">
+        <button type="button" id="scrapeButton" class="btn-scrape">Realizar Scraping</button>
+      </div>
+    </form>
+
+    <!-- Resultados -->
+    <div id="results" class="mt-8 results-container">
+      <h2 class="text-lg font-bold mb-4 results-title">Resultados:</h2>
+      <ul id="resultsList" class="list-disc pl-6">
+        <!-- Aquí se mostrarán los resultados -->
+      </ul>
+    </div>
+  </div>
+
+  <!-- Scripts de JavaScript -->
+  <script>
+    // Función para realizar scraping
+    function realizarScraping() {
+      const url = document.getElementById('url').value.trim();
+      const xpath = document.getElementById('xpath').value.trim();
+
+      // Validar que ambos campos no estén vacíos
+      if (url === '' || xpath === '') {
+        alert('Por favor ingresa la URL y el XPath.');
+        return;
+      }
+
+      // Realizar la solicitud para obtener el HTML
+      fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`)
+        .then(response => response.json())
+        .then(data => {
+          const html = data.contents;
+          const parser = new DOMParser();
+          const doc = parser.parseFromString(html, 'text/html');
+          
+          // Crear una función resolver para manejar los namespaces correctamente
+          const resolver = doc.createNSResolver(doc.documentElement);
+          
+          // Ejecutar XPath con soporte mejorado para elementos HTML
+          let resultNodes;
+          try {
+            resultNodes = doc.evaluate(
+              xpath, 
+              doc, 
+              function(prefix) {
+                // Resolver para XHTML namespace
+                if (prefix === 'html' || prefix === 'xhtml') {
+                  return 'http://www.w3.org/1999/xhtml';
+                }
+                // Namespace por defecto para HTML
+                if (prefix === '') {
+                  return 'http://www.w3.org/1999/xhtml';
+                }
+                return null;
+              }, 
+              XPathResult.ANY_TYPE, 
+              null
+            );
+          } catch (e) {
+            alert('Error en la expresión XPath: ' + e.message);
+            return;
+          }
+          
+          let node = resultNodes.iterateNext();
+          let results = [];
+
+          while (node) {
+            // Manejar diferentes tipos de nodos
+            if (node.nodeType === Node.ELEMENT_NODE && node.tagName.toLowerCase() === 'img') {
+              // Para imágenes, mostrar la URL de la imagen
+              results.push({
+                type: 'image',
+                src: node.getAttribute('src'),
+                alt: node.getAttribute('alt') || 'Sin descripción'
+              });
+            } else {
+              // Para otros elementos, mostrar el texto
+              results.push({
+                type: 'text',
+                content: node.textContent.trim()
+              });
+            }
+            node = resultNodes.iterateNext();
+          }
+
+          // Mostrar resultados en la lista
+          const resultsList = document.getElementById('resultsList');
+          resultsList.innerHTML = '';
+          
+          if (results.length === 0) {
+            const li = document.createElement('li');
+            li.textContent = 'No se encontraron resultados para esta consulta XPath.';
+            li.className = 'result-item';
+            resultsList.appendChild(li);
+          } else {
+            results.forEach(result => {
+              const li = document.createElement('li');
+              li.className = 'result-item';
+              
+              if (result.type === 'image') {
+                // Crear una vista previa de la imagen
+                const imgPreview = document.createElement('img');
+                imgPreview.src = result.src.startsWith('http') ? result.src : new URL(result.src, url).href;
+                imgPreview.alt = result.alt;
+                imgPreview.className = 'w-full h-auto max-h-40 object-contain mb-2';
+                
+                const imgInfo = document.createElement('div');
+                imgInfo.innerHTML = `<strong>URL:</strong> ${result.src}<br><strong>Alt:</strong> ${result.alt}`;
+                
+                li.appendChild(imgPreview);
+                li.appendChild(imgInfo);
+              } else {
+                li.textContent = result.content;
+              }
+              
+              resultsList.appendChild(li);
+            });
+          }
+        })
+        .catch(error => {
+          console.error('Error al obtener la página:', error);
+          alert('Error al obtener la página. Por favor verifica la URL ingresada.');
+        });
+    }
+
+    // Event listener para el botón de scraping
+    document.getElementById('scrapeButton').addEventListener('click', realizarScraping);
+    
+    // Función para cambiar entre modo claro y oscuro
+    function toggleDarkMode() {
+      document.documentElement.classList.toggle('dark');
+      
+      // Guardar preferencia en localStorage
+      if (document.documentElement.classList.contains('dark')) {
+        localStorage.setItem('darkMode', 'enabled');
+      } else {
+        localStorage.setItem('darkMode', 'disabled');
+      }
+    }
+    
+    // Verificar preferencia guardada
+    if (localStorage.getItem('darkMode') === 'enabled') {
+      document.documentElement.classList.add('dark');
+    }
+    
+    // Event listener para el botón de modo oscuro
+    document.getElementById('darkModeToggle').addEventListener('click', toggleDarkMode);
+  </script>
+
+</body>
+</html>
